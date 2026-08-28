@@ -37,18 +37,10 @@ struct ContentView: View {
                 Label("Device", systemImage: "tv")
             }
         }
-        // Floats above whichever tab is showing (not just DeviceStatusView,
-        // which the user may not be looking at) - syncingMovieTitle is kept
-        // fresh continuously by BLEManager.startDeviceInfoPolling for
-        // exactly this, appearing/disappearing on its own as a download
-        // starts/finishes with no action needed from whoever's watching.
-        .overlay(alignment: .bottomTrailing) {
-            if bleManager.syncingMovieTitle != nil {
-                SyncIndicator()
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 60)
-            }
-        }
+        // No floating sync indicator here anymore - the device's own idle
+        // screen already shows a "Syncing: <title>" badge (see
+        // idle_screen.py), which was the actually-wanted surface for this;
+        // the iOS app doesn't need its own duplicate.
     }
 
     private var moviesTab: some View {
@@ -82,22 +74,6 @@ struct ContentView: View {
                     }
                 }
         }
-    }
-}
-
-/// Small floating "something's downloading" indicator, shown/hidden by
-/// ContentView based on BLEManager.syncingMovieTitle - matches the
-/// ultraThinMaterial-circle style MovieLibraryView's own floating buttons
-/// already use, so it reads as part of the same visual language rather
-/// than a one-off.
-private struct SyncIndicator: View {
-    var body: some View {
-        ProgressView()
-            .tint(.white)
-            .padding(10)
-            .background(.ultraThinMaterial, in: Circle())
-            .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
-            .accessibilityLabel("Syncing movie from Media Library")
     }
 }
 
