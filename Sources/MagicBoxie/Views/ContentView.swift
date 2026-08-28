@@ -92,16 +92,25 @@ private struct ShareImportBanner: View {
         }
     }
 
+    private var isInProgress: Bool {
+        if case .importing = status { return true }
+        return false
+    }
+
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
+            if isInProgress {
+                ProgressView()
+                    .controlSize(.small)
+            }
             Text(text)
-                .font(.caption)
+                .font(.subheadline)
             Spacer()
             Button {
                 onDismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.caption)
+                    .font(.subheadline)
             }
         }
         .padding(8)
