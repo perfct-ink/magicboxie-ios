@@ -6,28 +6,63 @@ struct MovieLibraryView: View {
     @EnvironmentObject private var webClient: MagicBoxieWebClient
 
     @Binding var path: [Movie]
+    @AppStorage("moviesListView") private var showsList = false
     @State private var refreshSpin = 0.0
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 28) {
-                    ForEach(MovieCategory.genreSections(for: bleManager.movies, genres: genreNames), id: \.genre) { section in
-                        MovieShelf(
-                            title: section.genre,
-                            movies: section.movies,
-                            onSelect: { path.append($0) }
-                        )
+            if let message = bleManager.deviceUpdateStatus {
+                ProgressView(message)
+                    .padding()
+            }
+            if bleManager.connectionState == .connected || !bleManager.movies.isEmpty {
+                HStack {
+                    Picker("Movie view", selection: $showsList) {
+                        Text("Netflix").tag(false)
+                        Text("List").tag(true)
                     }
-                    ForEach(MovieCategory.sections(for: bleManager.movies), id: \.category.rawValue) { section in
-                        MovieShelf(
-                            title: section.category.rawValue,
-                            movies: section.movies,
-                            onSelect: { path.append($0) }
-                        )
+                    .pickerStyle(.segmented)
+                    refreshButton
+                        .disabled(bleManager.connectionState != .connected)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            }
+            if bleManager.connectionState != .connected, !bleManager.movies.isEmpty {
+                VStack(spacing: 8) {
+                    ConnectionStatusView()
+                    Text("Last known movies on device")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+            }
+            ScrollView {
+                if bleManager.connectionState == .connected || !bleManager.movies.isEmpty {
+                    if showsList {
+                        MovieShelf(title: "Movies", movies: bleManager.movies,
+                                   onSelect: { path.append($0) }, isList: true)
+                            .padding(.vertical, 16)
+                    } else {
+                        LazyVStack(alignment: .leading, spacing: 28) {
+                            ForEach(MovieCategory.genreSections(for: bleManager.movies, genres: genreNames), id: \.genre) { section in
+                                MovieShelf(
+                                    title: section.genre,
+                                    movies: section.movies,
+                                    onSelect: { path.append($0) }
+                                )
+                            }
+                            ForEach(MovieCategory.sections(for: bleManager.movies), id: \.category.rawValue) { section in
+                                MovieShelf(
+                                    title: section.category.rawValue,
+                                    movies: section.movies,
+                                    onSelect: { path.append($0) }
+                                )
+                            }
+                        }
+                        .padding(.vertical, 16)
                     }
                 }
-                .padding(.vertical, 16)
             }
             .refreshable {
                 await refresh()
@@ -49,7 +84,7 @@ struct MovieLibraryView: View {
                 // rather than just an empty screen. Connected but genuinely
                 // empty: a plain, simpler message - there's no connection
                 // problem to explain or retry there.
-                if bleManager.connectionState != .connected {
+                if bleManager.connectionState != .connected && bleManager.movies.isEmpty {
                     ConnectionStatusView()
                 } else if bleManager.movies.isEmpty {
                     // BLE alone can list movies (see refreshLibraryViaBLE),
@@ -68,19 +103,16 @@ struct MovieLibraryView: View {
                     }
                 }
             }
-            .overlay(alignment: .topTrailing) {
-                refreshButton
-                    .padding(.top, 8)
-                    .padding(.trailing, 16)
-            }
-
             // Keep playback controls available without adding navigation or
             // promotional chrome to the movie list itself.
-            if let displayedMovie = bleManager.currentMovie {
+            if bleManager.connectionState == .connected, let displayedMovie = bleManager.currentMovie {
                 PlayerControlsView(movie: displayedMovie)
             }
         }
         .background(Color.appBackground.ignoresSafeArea())
+        .onChange(of: bleManager.connectionState) { state in
+            if state != .connected { path.removeAll() }
+        }
     }
 
     /// bleManager.refreshLibrary() isn't itself awaitable - the BLE read
@@ -93,6 +125,7 @@ struct MovieLibraryView: View {
     /// updates reactively off bleManager.movies regardless of when the
     /// spinner itself dismisses.
     private func refresh() async {
+        guard bleManager.connectionState == .connected else { return }
         bleManager.refreshLibrary()
         try? await Task.sleep(nanoseconds: 800_000_000)
     }
@@ -134,6 +167,8 @@ private struct MovieShelf: View {
     let movies: [Movie]
     let onSelect: (Movie) -> Void
 
+    var isList = false
+
     @State private var pendingDelete: Movie?
 
     var body: some View {
@@ -143,35 +178,14 @@ private struct MovieShelf: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 16)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 10) {
-                    ForEach(movies) { movie in
-                        Button {
-                            onSelect(movie)
-                        } label: {
-                            PosterCard(
-                                title: movie.title,
-                                primaryURL: thumbnailURL(for: movie),
-                                fallbackURL: artworkStore.artwork(for: movie.title)?.posterURL,
-                                isTranscoding: bleManager.transcodingMovieID == movie.id,
-                                needsTranscoding: movie.needsTranscoding
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                pendingDelete = movie
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                        .task {
-                            guard let artwork = await artworkStore.fetchIfNeeded(for: movie.title) else { return }
-                            await bleManager.pushThumbnailToDeviceIfNeeded(movie: movie, artwork: artwork)
-                        }
-                    }
+            if isList {
+                LazyVStack(spacing: 8) { movieItems }
+                    .padding(.horizontal, 16)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 10) { movieItems }
+                        .padding(.horizontal, 16)
                 }
-                .padding(.horizontal, 16)
             }
         }
         .alert(
@@ -186,6 +200,53 @@ private struct MovieShelf: View {
         } message: {
             Text("This removes the movie from the device. It won\u{2019}t be downloaded again automatically.")
         }
+    }
+
+    private var movieItems: some View {
+                    ForEach(movies) { movie in
+                        Button {
+                            onSelect(movie)
+                        } label: {
+                            if isList {
+                                HStack(spacing: 12) {
+                                    ThumbnailImage(primaryURL: thumbnailURL(for: movie), fallbackURL: artworkStore.artwork(for: movie.title)?.posterURL)
+                                        .frame(width: 40, height: 60)
+                                        .clipped()
+                                    Text(movie.title).foregroundStyle(.primary)
+                                    Spacer()
+                                    if bleManager.isMovieLoading(movie) { ProgressView().accessibilityLabel("Loading") }
+                                    if (webClient.isDownloadedToPhone(title: movie.title) || bleManager.isDownloadedToPhone(title: movie.title)) {
+                                        Image(systemName: "iphone")
+                                            .accessibilityLabel("Downloaded to iPhone")
+                                    }
+                                }
+                                .padding(.vertical, 6)
+                            } else {
+                            PosterCard(
+                                title: movie.title,
+                                primaryURL: thumbnailURL(for: movie),
+                                fallbackURL: artworkStore.artwork(for: movie.title)?.posterURL,
+                                isTranscoding: bleManager.transcodingMovieID == movie.id,
+                                needsTranscoding: movie.needsTranscoding,
+                                isLoading: bleManager.isMovieLoading(movie),
+                                isDownloaded: (webClient.isDownloadedToPhone(title: movie.title) || bleManager.isDownloadedToPhone(title: movie.title))
+                            )
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                pendingDelete = movie
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            .disabled(bleManager.connectionState != .connected)
+                        }
+                        .task {
+                            guard let artwork = await artworkStore.fetchIfNeeded(for: movie.title) else { return }
+                            await bleManager.pushThumbnailToDeviceIfNeeded(movie: movie, artwork: artwork)
+                        }
+                    }
     }
 
     /// Deletes from the device first, then - only once that's actually

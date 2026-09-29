@@ -35,6 +35,11 @@ struct DeviceStatusView: View {
     var body: some View {
         List {
             bluetoothSection
+            if let message = bleManager.deviceUpdateStatus {
+                Section {
+                    ProgressView(message)
+                }
+            }
             wifiSection
             if webClient.isAuthenticated {
                 deviceInfoSection

@@ -32,7 +32,7 @@ struct ConnectionStatusView: View {
         case .connecting:
             VStack(spacing: 12) {
                 ProgressView()
-                Text("Connecting…")
+                Text(AppConfig.mode == .bluetooth ? "Scanning for MagicBoxie…" : "Connecting…")
                     .foregroundStyle(.secondary)
             }
         case .failed(let message):

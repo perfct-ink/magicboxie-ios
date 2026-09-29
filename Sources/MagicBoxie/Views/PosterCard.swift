@@ -19,6 +19,9 @@ struct PosterCard: View {
     /// for - see Movie.needsTranscoding.
     var needsTranscoding: Bool = false
 
+    var isLoading = false
+    var isDownloaded = false
+
     static let width: CGFloat = 126
 
     var body: some View {
@@ -49,11 +52,18 @@ struct PosterCard: View {
                 }
                 .shadow(color: .black.opacity(0.5), radius: 5, y: 3)
 
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.82))
-                .lineLimit(1)
-                .frame(width: Self.width, alignment: .leading)
+            HStack(spacing: 4) {
+                if isLoading { ProgressView().controlSize(.small).accessibilityLabel("Loading") }
+                if isDownloaded {
+                    Image(systemName: "iphone")
+                        .accessibilityLabel("Downloaded to iPhone")
+                }
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineLimit(1)
+            }
+            .frame(width: Self.width, alignment: .leading)
         }
     }
 }

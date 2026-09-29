@@ -36,6 +36,7 @@ struct RemoteMovieDetailView: View {
                             .font(.body)
                     }
 
+                    PhoneDownloadButton(movie: movie, showsTitle: true)
                     actionRow
                 }
                 .padding(.horizontal)
@@ -76,7 +77,7 @@ struct RemoteMovieDetailView: View {
                 statusLabel("Already on device", systemImage: "checkmark.circle")
             } else if movie.isReady {
                 Button(action: onDownload) {
-                    Label("Download to Device", systemImage: "icloud.and.arrow.down")
+                    Label("Send to MagicBoxie", systemImage: "icloud.and.arrow.down")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
@@ -135,5 +136,55 @@ struct RemoteMovieDetailView: View {
 
     return NavigationStack {
         RemoteMovieDetailView(movie: movie, status: nil, alreadyOnDevice: false, onDownload: {})
+    }
+}
+
+/// Observes shared download state so progress updates in both the row and detail.
+struct PhoneDownloadButton: View {
+    @EnvironmentObject private var webClient: MagicBoxieWebClient
+    let movie: RemoteMovie
+    var showsTitle = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if webClient.isDownloadingToPhone(movie) {
+                HStack {
+                    ProgressView()
+                    if showsTitle { Text("Downloading to iPhone…") }
+                }
+                .accessibilityLabel("Downloading to iPhone")
+            } else if webClient.isDownloadedToPhone(movie) {
+                Label("Downloaded to iPhone", systemImage: "iphone")
+                    .labelStyle(PhoneDownloadLabelStyle(showsTitle: showsTitle))
+                    .foregroundStyle(.green)
+                    .accessibilityLabel("Downloaded to iPhone")
+            } else if movie.isReady {
+                Button {
+                    Task { await webClient.downloadToPhone(movie) }
+                } label: {
+                    Label(webClient.phoneDownloadError(for: movie) == nil ? "Download to iPhone" : "Retry iPhone download",
+                          systemImage: "arrow.down.circle")
+                        .labelStyle(PhoneDownloadLabelStyle(showsTitle: showsTitle))
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(webClient.phoneDownloadError(for: movie) == nil ? "Download to iPhone" : "Retry iPhone download")
+                .tint(.appAccent)
+            }
+            if showsTitle, let error = webClient.phoneDownloadError(for: movie) {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+        }
+    }
+}
+
+private struct PhoneDownloadLabelStyle: LabelStyle {
+    let showsTitle: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack {
+            configuration.icon
+            if showsTitle { configuration.title }
+        }
+
     }
 }

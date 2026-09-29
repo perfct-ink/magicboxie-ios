@@ -9,6 +9,7 @@ struct RemoteLibraryView: View {
     @EnvironmentObject private var webClient: MagicBoxieWebClient
     @AppStorage(AppConfig.magicBoxWebURLDefaultsKey) private var serverURLOverride = ""
 
+    @State private var showsDownloads = false
     @State private var password = ""
     @State private var isLoggingIn = false
     @State private var isRefreshing = false
@@ -31,10 +32,16 @@ struct RemoteLibraryView: View {
 
     var body: some View {
         Group {
-            if webClient.isAuthenticated {
+            if webClient.isAuthenticated || showsDownloads {
                 libraryList
             } else {
-                loginForm
+                VStack {
+                    if !webClient.downloadedPhoneMovies.isEmpty {
+                        Button("View iPhone Downloads") { showsDownloads = true }
+                            .padding()
+                    }
+                    loginForm
+                }
             }
         }
         .navigationTitle("Cloud Library")
@@ -102,26 +109,41 @@ struct RemoteLibraryView: View {
         .background(Color.appBackground.ignoresSafeArea())
     }
 
+    private var displayedMovies: [RemoteMovie] {
+        showsDownloads
+            ? webClient.downloadedPhoneMovies
+            : webClient.movies
+    }
+
     private var libraryList: some View {
         List {
-            ForEach(webClient.movies) { movie in
+            ForEach(displayedMovies) { movie in
                 MovieRow(
                     movie: movie,
                     status: rowStatus[movie.id],
-                    alreadyOnDevice: bleManager.movies.contains { $0.title == movie.name },
+                    alreadyOnDevice: bleManager.connectionState == .connected && bleManager.movies.contains { $0.title == movie.name },
+                    isDownloaded: webClient.isDownloadedToPhone(movie) || bleManager.isDownloadedToPhone(title: movie.name),
                     onDownload: { Task { await downloadAndSend(movie) } }
                 )
                 .listRowBackground(Color.appElevatedSurface)
             }
         }
+        .safeAreaInset(edge: .top) {
+            Picker("Library", selection: $showsDownloads) {
+                Text("Media Server").tag(false)
+                Text("iPhone Downloads").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .padding()
+        }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .overlay {
-            if webClient.movies.isEmpty {
+            if displayedMovies.isEmpty {
                 if isRefreshing {
                     ProgressView()
                 } else {
-                    Text("No movies on MagicBoxie-web yet")
+                    Text(showsDownloads ? "No movies downloaded to iPhone yet" : "No movies on MagicBoxie-web yet")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -160,9 +182,11 @@ struct RemoteLibraryView: View {
     }
 
     private struct MovieRow: View {
+        @EnvironmentObject private var webClient: MagicBoxieWebClient
         let movie: RemoteMovie
         let status: RowStatus?
         let alreadyOnDevice: Bool
+        let isDownloaded: Bool
         let onDownload: () -> Void
 
         var body: some View {
@@ -186,7 +210,13 @@ struct RemoteLibraryView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
 
                         VStack(alignment: .leading) {
-                            Text(movie.name)
+                            HStack {
+                                Text(movie.name)
+                                if isDownloaded {
+                                    Image(systemName: "iphone")
+                                        .accessibilityLabel("Downloaded to iPhone")
+                                }
+                            }
                             HStack(spacing: 4) {
                                 if let year = movie.productionYear {
                                     Text(String(year))
@@ -204,6 +234,7 @@ struct RemoteLibraryView: View {
                     .foregroundStyle(.primary)
                 }
                 Spacer()
+                PhoneDownloadButton(movie: movie)
                 trailingControl
             }
         }
@@ -214,8 +245,7 @@ struct RemoteLibraryView: View {
             case .downloading:
                 ProgressView()
             case .sending:
-                Label("Sending to device", systemImage: "antenna.radiowaves.left.and.right")
-                    .labelStyle(.iconOnly)
+                ProgressView().accessibilityLabel("Sending to device")
             case .done:
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             case .queued:
@@ -235,9 +265,10 @@ struct RemoteLibraryView: View {
                     Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
                 } else if movie.isReady {
                     Button(action: onDownload) {
-                        Image(systemName: "icloud.and.arrow.down")
+                        Image(systemName: "tv.badge.wifi")
                     }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("Send to MagicBoxie")
                     .tint(.appAccent)
                 } else {
                     Text(movie.status.replacingOccurrences(of: "_", with: " "))

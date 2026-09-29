@@ -5,7 +5,7 @@ import Foundation
 /// match the wire format (see magicboxie-web's items_controller.go); the
 /// MagicBoxie*-prefixed fields are that server's own additive extensions
 /// (status/progress/original filename) real Jellyfin has no concept of.
-struct RemoteMovie: Decodable, Identifiable, Hashable {
+struct RemoteMovie: Codable, Identifiable, Hashable {
     let id: String
     let name: String
     let overview: String?

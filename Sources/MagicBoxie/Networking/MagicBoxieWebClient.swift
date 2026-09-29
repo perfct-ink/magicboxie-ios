@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 private struct AuthResponse: Decodable {
     let accessToken: String
@@ -18,6 +19,81 @@ final class MagicBoxieWebClient: ObservableObject {
     @Published private(set) var movies: [RemoteMovie] = []
     @Published private(set) var devices: [RemoteDevice] = []
     @Published var lastError: String?
+
+    @Published private(set) var phoneDownloads: [String: RemoteMovie] = [:]
+    @Published private(set) var downloadingToPhone: Set<String> = []
+    @Published private(set) var phoneDownloadErrors: [String: String] = [:]
+
+    private static var downloadsDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("DownloadedMovies", isDirectory: true)
+    }
+
+    private func downloadKey(for movie: RemoteMovie) -> String {
+        SHA256.hash(data: Data("\(baseURL.absoluteString)|\(movie.id)".utf8))
+            .map { String(format: "%02x", $0) }.joined()
+    }
+
+    var downloadedPhoneMovies: [RemoteMovie] {
+        phoneDownloads.filter { $0.key == downloadKey(for: $0.value) }
+            .map(\.value).sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    func isDownloadedToPhone(_ movie: RemoteMovie) -> Bool {
+        phoneDownloads[downloadKey(for: movie)] != nil
+    }
+
+    func isDownloadedToPhone(title: String) -> Bool {
+        phoneDownloads.values.contains { $0.name == title }
+    }
+
+    func isDownloadingToPhone(_ movie: RemoteMovie) -> Bool {
+        downloadingToPhone.contains(downloadKey(for: movie))
+    }
+
+    func phoneDownloadError(for movie: RemoteMovie) -> String? {
+        phoneDownloadErrors[downloadKey(for: movie)]
+    }
+
+    /// Keeps a separate permanent copy; device upload cleanup never removes it.
+    func downloadToPhone(_ movie: RemoteMovie) async {
+        let key = downloadKey(for: movie)
+        guard !downloadingToPhone.contains(key), phoneDownloads[key] == nil else { return }
+        downloadingToPhone.insert(key)
+        phoneDownloadErrors[key] = nil
+        defer { downloadingToPhone.remove(key) }
+        let directory = Self.downloadsDirectory.appendingPathComponent(key, isDirectory: true)
+        do {
+            let temporaryFile = try await downloadMovie(movie)
+            defer { try? FileManager.default.removeItem(at: temporaryFile) }
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            var excludedDirectory = directory
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try excludedDirectory.setResourceValues(values)
+            let file = directory.appendingPathComponent(temporaryFile.lastPathComponent)
+            if FileManager.default.fileExists(atPath: file.path) {
+                try FileManager.default.removeItem(at: file)
+            }
+            try FileManager.default.moveItem(at: temporaryFile, to: file)
+            try JSONEncoder().encode(movie).write(to: directory.appendingPathComponent("movie.json"), options: .atomic)
+            phoneDownloads[key] = movie
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            phoneDownloadErrors[key] = error.localizedDescription
+        }
+    }
+
+    private func restorePhoneDownloads() {
+        let directories = (try? FileManager.default.contentsOfDirectory(at: Self.downloadsDirectory, includingPropertiesForKeys: nil)) ?? []
+        for directory in directories {
+            guard let data = try? Data(contentsOf: directory.appendingPathComponent("movie.json")),
+                  let movie = try? JSONDecoder().decode(RemoteMovie.self, from: data),
+                  let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil),
+                  files.contains(where: { $0.lastPathComponent != "movie.json" }) else { continue }
+            phoneDownloads[directory.lastPathComponent] = movie
+        }
+    }
 
     private var baseURL: URL
     private let session: URLSession
@@ -39,6 +115,7 @@ final class MagicBoxieWebClient: ObservableObject {
         let storedToken = KeychainStore.get(Self.tokenKey)
         self.token = storedToken
         self.isAuthenticated = storedToken != nil
+        restorePhoneDownloads()
     }
 
     /// Lets RemoteLibraryView point this client at a user-edited server URL
@@ -183,7 +260,9 @@ final class MagicBoxieWebClient: ObservableObject {
 
         let ext = (movie.originalFilename as NSString).pathExtension
         let filename = movie.name.replacingOccurrences(of: "/", with: "-") + (ext.isEmpty ? ".mp4" : ".\(ext)")
-        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        let temporaryDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+        let destination = temporaryDirectory.appendingPathComponent(filename)
         try? FileManager.default.removeItem(at: destination)
         try FileManager.default.moveItem(at: tempURL, to: destination)
         return destination

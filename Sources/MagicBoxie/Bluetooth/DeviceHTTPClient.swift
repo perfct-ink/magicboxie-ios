@@ -24,6 +24,7 @@ struct DeviceStatus: Decodable {
     /// if any - nil the rest of the time (device is idle, or the movie
     /// still playing/paused, are unrelated to this).
     let syncingMovieTitle: String?
+    let updateStatus: String?
     /// The SoC's own thermal sensor - see util.cpu_temperature_celsius on
     /// the device side. nil there (and here) if the sensor isn't readable,
     /// which shouldn't be mistaken for "the device is fine."
@@ -38,6 +39,7 @@ struct DeviceStatus: Decodable {
         case movieID = "movie_id"
         case positionSeconds = "position_seconds"
         case syncingMovieTitle = "syncing_movie_title"
+        case updateStatus = "update_status"
         case cpuTemperatureCelsius = "cpu_temperature_celsius"
         case underVoltage = "under_voltage"
         case throttled

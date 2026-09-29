@@ -48,6 +48,7 @@ struct MovieDetailView: View {
                         .buttonStyle(.bordered)
                         .tint(.white)
                     }
+                    .disabled(bleManager.connectionState != .connected)
                 }
                 .padding(.horizontal)
             }

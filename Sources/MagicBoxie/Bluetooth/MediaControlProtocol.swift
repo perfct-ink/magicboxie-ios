@@ -25,6 +25,8 @@ enum MediaControlProtocol {
     /// Compared against the device's own reported version (decodeAPIVersion)
     /// to detect skew and prompt for an update instead of failing in some
     /// more confusing way further down.
+    static let updateStatusCharacteristicUUID = CBUUID(string: "3E2C1A00-3B42-4B7E-9C3E-000000000009")
+
     static let supportedAPIVersion = 1
 
     enum Opcode: UInt8 {

@@ -86,6 +86,7 @@ final class BLEManager: NSObject, ObservableObject {
     /// (not surfaced over BLE): DeviceStatusView, the only thing that shows
     /// this, already needs deviceClient reachable to mean anything.
     @Published private(set) var syncingMovieTitle: String?
+    @Published private(set) var deviceUpdateStatus: String?
     /// The device's own reported LAN IP - see GET /api/version.
     @Published private(set) var deviceIPAddress: String?
     /// The SoC's own thermal sensor reading, and vcgencmd get_throttled's
@@ -147,8 +148,31 @@ final class BLEManager: NSObject, ObservableObject {
     private var hasAttemptedAutoRecovery = false
     private var isRecovering = false
 
+    @Published private(set) var downloadedMovieTitles: Set<String> = []
+
+    func consumeNowPlayingPresentation() -> Bool {
+        let shouldPresent = shouldAutoPresentNowPlaying
+        shouldAutoPresentNowPlaying = false
+        return shouldPresent
+    }
+
+    private func refreshDownloadedMovies() {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: Self.pendingUploadsDirectory, includingPropertiesForKeys: nil)) ?? []
+        downloadedMovieTitles = Set(files.map { $0.deletingPathExtension().lastPathComponent })
+    }
+
+    func isDownloadedToPhone(title: String) -> Bool {
+        downloadedMovieTitles.contains(title.replacingOccurrences(of: "/", with: "-"))
+    }
+
+    func isMovieLoading(_ movie: Movie) -> Bool {
+        pendingMovie?.id == movie.id || transcodingMovieID == movie.id || syncingMovieTitle == movie.title
+    }
+
     override init() {
         super.init()
+        refreshDownloadedMovies()
         switch mode {
         case .bluetooth:
             centralManager = CBCentralManager(delegate: self, queue: nil)
@@ -372,6 +396,7 @@ final class BLEManager: NSObject, ObservableObject {
         let destination = Self.pendingUploadsDirectory.appendingPathComponent(fileURL.lastPathComponent)
         try? FileManager.default.removeItem(at: destination)
         try? FileManager.default.moveItem(at: fileURL, to: destination)
+        refreshDownloadedMovies()
         await flushPendingUploads()
     }
 
@@ -389,6 +414,7 @@ final class BLEManager: NSObject, ObservableObject {
         for fileURL in files {
             if await uploadMovieIfNeeded(fileURL: fileURL) {
                 try? FileManager.default.removeItem(at: fileURL)
+                refreshDownloadedMovies()
             }
         }
     }
@@ -419,6 +445,7 @@ final class BLEManager: NSObject, ObservableObject {
 
     private func refreshDirectAPIStatus(using client: DeviceHTTPClient) async {
         guard let status = try? await client.fetchStatus() else { return }
+        deviceUpdateStatus = status.updateStatus
         updatePlaybackState(PlaybackState(
             status: PlaybackStatus(deviceString: status.status),
             movieID: status.movieID,
@@ -436,6 +463,9 @@ final class BLEManager: NSObject, ObservableObject {
         guard let client = deviceClient else { return }
         async let status = try? client.fetchStatus()
         async let version = try? client.fetchVersion()
+        if let deviceStatus = await status {
+            deviceUpdateStatus = deviceStatus.updateStatus
+        }
         syncingMovieTitle = await status?.syncingMovieTitle
         cpuTemperatureCelsius = await status?.cpuTemperatureCelsius
         underVoltage = await status?.underVoltage
@@ -455,7 +485,8 @@ final class BLEManager: NSObject, ObservableObject {
         // Nothing playing and nothing pending, but the queue has more - the
         // previous movie must have finished on its own. An explicit stop()
         // already empties the queue, so this can't misfire there.
-        if newState.status == .stopped, pendingMovie == nil, !queue.isEmpty {
+        if newState.status == .stopped, pendingMovie == nil, !queue.isEmpty,
+           deviceUpdateStatus == nil || deviceUpdateStatus == "Updating movies" {
             playNextInQueue()
         }
     }
@@ -504,12 +535,14 @@ final class BLEManager: NSObject, ObservableObject {
         }
     }
 
-    func skipForward15() {
-        seek(toSeconds: playbackState.positionSeconds + 15)
+    func skipForwardOneMinute() {
+        let position = playbackState.positionSeconds + 60
+        let duration = currentMovie?.durationSeconds ?? 0
+        seek(toSeconds: duration > 0 ? min(position, duration) : position)
     }
 
-    func skipBackward15() {
-        seek(toSeconds: playbackState.positionSeconds - 15)
+    func skipBackwardOneMinute() {
+        seek(toSeconds: max(0, playbackState.positionSeconds - 60))
     }
 
     /// Powers off the physical device entirely - not just stop playback.
@@ -782,6 +815,7 @@ extension BLEManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        deviceUpdateStatus = nil
         peripheral.discoverServices([MediaControlProtocol.serviceUUID])
     }
 
@@ -790,6 +824,13 @@ extension BLEManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        // Preserve the installation message through a brief reboot, but not indefinitely.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 120_000_000_000)
+            guard let self, self.connectionState != .connected else { return }
+            self.deviceUpdateStatus = nil
+        }
+
         blePollTask?.cancel()
         commandCharacteristic = nil
         statusCharacteristic = nil
@@ -819,7 +860,8 @@ extension BLEManager: CBPeripheralDelegate {
                     MediaControlProtocol.networkInfoCharacteristicUUID,
                     MediaControlProtocol.transcodeStatusCharacteristicUUID,
                     MediaControlProtocol.apiVersionCharacteristicUUID,
-                    MediaControlProtocol.wifiProvisionCharacteristicUUID
+                    MediaControlProtocol.wifiProvisionCharacteristicUUID,
+                    MediaControlProtocol.updateStatusCharacteristicUUID
                 ],
                 for: service
             )
@@ -845,6 +887,9 @@ extension BLEManager: CBPeripheralDelegate {
                 peripheral.readValue(for: characteristic)
             case MediaControlProtocol.networkInfoCharacteristicUUID:
                 networkInfoCharacteristic = characteristic
+                peripheral.readValue(for: characteristic)
+            case MediaControlProtocol.updateStatusCharacteristicUUID:
+                peripheral.setNotifyValue(true, for: characteristic)
                 peripheral.readValue(for: characteristic)
             case MediaControlProtocol.transcodeStatusCharacteristicUUID:
                 transcodeStatusCharacteristic = characteristic
@@ -901,6 +946,9 @@ extension BLEManager: CBPeripheralDelegate {
                 let raw = String(data: data, encoding: .utf8) ?? "<\(data.count) non-UTF8 bytes>"
                 Self.logger.error("networkInfo decode failed, raw value: \(raw, privacy: .public)")
             }
+        case MediaControlProtocol.updateStatusCharacteristicUUID:
+            let message = String(data: data, encoding: .utf8) ?? ""
+            deviceUpdateStatus = message.isEmpty ? nil : message
         case MediaControlProtocol.transcodeStatusCharacteristicUUID:
             transcodingMovieID = MediaControlProtocol.decodeTranscodeStatus(data)
         case MediaControlProtocol.apiVersionCharacteristicUUID:

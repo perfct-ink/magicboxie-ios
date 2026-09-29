@@ -11,80 +11,106 @@ struct PlayerControlsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Opens the full player (progress bar/scrub, ±15s, previous,
-            // and the queue) - there's no room for any of that in this
-            // compact bar.
-            Button {
-                showingNowPlaying = true
-            } label: {
-                HStack(spacing: 12) {
-                    ThumbnailImage(
-                        primaryURL: AppConfig.deviceHTTPBaseURL.appendingPathComponent("api/movies/\(movie.id)/thumbnail"),
-                        fallbackURL: artworkStore.artwork(for: movie.title)?.posterURL
-                    )
-                    .frame(width: 46, height: 46)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("NOW PLAYING")
-                            .font(.system(size: 9, weight: .bold))
-                            .tracking(1.1)
-                            .foregroundStyle(Color.appAccent)
-                        Text(movie.title)
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-
-            Spacer(minLength: 8)
-
-            if isLoading {
-                ProgressView()
-            } else {
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                // Opens the full player with scrubbing and queue controls.
                 Button {
-                    switch bleManager.playbackState.status {
-                    case .playing:
-                        bleManager.pause()
-                    case .paused:
-                        bleManager.play()
-                    case .stopped:
-                        // Nothing's loaded on the device once truly
-                        // stopped (e.g. this movie reached its natural
-                        // end) - a bare play() would be a no-op, so
-                        // re-select and start it again from scratch.
-                        bleManager.playNow(movie)
-                    }
+                    showingNowPlaying = true
                 } label: {
-                    Image(systemName: bleManager.playbackState.status == .playing ? "pause.fill" : "play.fill")
-                }
-                .tint(.appAccent)
-            }
+                    HStack(spacing: 12) {
+                        ThumbnailImage(
+                            primaryURL: AppConfig.deviceHTTPBaseURL.appendingPathComponent("api/movies/\(movie.id)/thumbnail"),
+                            fallbackURL: artworkStore.artwork(for: movie.title)?.posterURL
+                        )
+                        .frame(width: 46, height: 46)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            if !bleManager.queue.isEmpty {
-                Button {
-                    bleManager.skipToNext()
-                } label: {
-                    Image(systemName: "forward.end.fill")
-                        // A count badge, not just the bare skip icon - the
-                        // queue itself is otherwise only visible after
-                        // opening the full Now Playing screen, so there was
-                        // no way to tell "something's queued" (let alone
-                        // how much) from the mini player alone.
-                        .overlay(alignment: .topTrailing) {
-                            Text("\(bleManager.queue.count)")
-                                .font(.system(size: 10, weight: .bold))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("NOW PLAYING")
+                                .font(.system(size: 9, weight: .bold))
+                                .tracking(1.1)
+                                .foregroundStyle(Color.appAccent)
+                            Text(movie.title)
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(.white)
-                                .padding(3)
-                                .background(Color.appAccent, in: Circle())
-                                .offset(x: 8, y: -8)
+                                .lineLimit(1)
                         }
+                    }
                 }
-                .tint(.primary)
+                .buttonStyle(.plain)
+
+                Spacer(minLength: 8)
+
+                if isLoading {
+                    ProgressView()
+                } else {
+                    Button {
+                        switch bleManager.playbackState.status {
+                        case .playing:
+                            bleManager.pause()
+                        case .paused:
+                            bleManager.play()
+                        case .stopped:
+                            // Nothing's loaded on the device once truly
+                            // stopped (e.g. this movie reached its natural
+                            // end) - a bare play() would be a no-op, so
+                            // re-select and start it again from scratch.
+                            bleManager.playNow(movie)
+                        }
+                    } label: {
+                        Image(systemName: bleManager.playbackState.status == .playing ? "pause.fill" : "play.fill")
+                    }
+                    .tint(.appAccent)
+                }
+
+                if !bleManager.queue.isEmpty {
+                    Button {
+                        bleManager.skipToNext()
+                    } label: {
+                        Image(systemName: "forward.end.fill")
+                            // A count badge, not just the bare skip icon - the
+                            // queue itself is otherwise only visible after
+                            // opening the full Now Playing screen, so there was
+                            // no way to tell "something's queued" (let alone
+                            // how much) from the mini player alone.
+                            .overlay(alignment: .topTrailing) {
+                                Text("\(bleManager.queue.count)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(3)
+                                    .background(Color.appAccent, in: Circle())
+                                    .offset(x: 8, y: -8)
+                            }
+                    }
+                    .tint(.primary)
+                }
             }
+            HStack(spacing: 12) {
+                Button {
+                    bleManager.skipBackwardOneMinute()
+                } label: {
+                    Image(systemName: "gobackward.60")
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Back 1 minute")
+
+                ProgressView(
+                    value: isLoading ? 0 : max(0, min(Double(bleManager.playbackState.positionSeconds), Double(movie.durationSeconds))),
+                    total: max(1, Double(movie.durationSeconds))
+                )
+                .progressViewStyle(.linear)
+                .accessibilityLabel("Playback progress")
+
+                Button {
+                    bleManager.skipForwardOneMinute()
+                } label: {
+                    Image(systemName: "goforward.60")
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Forward 1 minute")
+            }
+            .tint(.appAccent)
+            .disabled(isLoading || bleManager.playbackState.status == .stopped)
         }
         .font(.system(size: 22))
         .padding(.horizontal, 14)
@@ -104,28 +130,14 @@ struct PlayerControlsView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        // Opens automatically whenever a movie starts playing, not just on
-        // tap - onAppear covers this view mounting for the very first movie
-        // of a session (nothing was playing before), onChange covers every
-        // later movie (skip-to-next, playing something else) while this
-        // view stays mounted throughout, since neither alone covers both:
-        // onAppear doesn't refire just because `movie` changed underneath
-        // an already-mounted view, and onChange never fires for the very
-        // first value. Doesn't reopen just because the user closed it
-        // themselves and the same movie kept playing - only an actual
-        // movie change (or the first one) re-triggers this. Both gated on
-        // bleManager.shouldAutoPresentNowPlaying, which enqueue() sets to
-        // false when it auto-starts playback because the queue was empty -
-        // "Add to Queue" is a background action and shouldn't yank the
-        // user into the full-screen player just because nothing else
-        // happened to be playing yet.
+        // Consume each playback request once so returning to Movies does not reopen the player.
         .onAppear {
-            if bleManager.shouldAutoPresentNowPlaying { showingNowPlaying = true }
+            if bleManager.consumeNowPlayingPresentation() { showingNowPlaying = true }
         }
         // Single-parameter form - this project targets iOS 16, and the
         // two-parameter onChange(of:initial:_:) needs 17.
         .onChange(of: movie.id) { _ in
-            if bleManager.shouldAutoPresentNowPlaying { showingNowPlaying = true }
+            if bleManager.consumeNowPlayingPresentation() { showingNowPlaying = true }
         }
     }
 }

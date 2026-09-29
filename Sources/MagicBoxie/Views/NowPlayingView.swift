@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Full-screen playback controls, reached by tapping the compact mini
 /// player (PlayerControlsView). Has room for the things that don't fit
-/// there: a scrubbable progress bar, ±15s skip, and previous/next.
+/// there: a scrubbable progress bar, ±1 minute skip, and previous/next.
 struct NowPlayingView: View {
     @EnvironmentObject private var bleManager: BLEManager
     @EnvironmentObject private var artworkStore: MovieArtworkStore
@@ -24,7 +24,7 @@ struct NowPlayingView: View {
     }
 
     private var displayedPosition: Double {
-        isScrubbing ? scrubPosition : min(Double(bleManager.playbackState.positionSeconds), duration)
+        isScrubbing ? scrubPosition : max(0, min(Double(bleManager.playbackState.positionSeconds), duration))
     }
 
     var body: some View {
@@ -101,6 +101,8 @@ struct NowPlayingView: View {
                 }
             )
             .tint(.appAccent)
+            .accessibilityLabel("Playback progress")
+            .disabled(isLoading || movie.durationSeconds <= 0 || bleManager.playbackState.status == .stopped)
 
             HStack {
                 Text(Self.formatTime(displayedPosition))
@@ -122,10 +124,12 @@ struct NowPlayingView: View {
             }
 
             Button {
-                bleManager.skipBackward15()
+                bleManager.skipBackwardOneMinute()
             } label: {
-                Image(systemName: "gobackward.15")
+                Image(systemName: "gobackward.60")
             }
+            .accessibilityLabel("Back 1 minute")
+            .disabled(isLoading || bleManager.playbackState.status == .stopped)
 
             if isLoading {
                 ProgressView()
@@ -149,10 +153,12 @@ struct NowPlayingView: View {
             }
 
             Button {
-                bleManager.skipForward15()
+                bleManager.skipForwardOneMinute()
             } label: {
-                Image(systemName: "goforward.15")
+                Image(systemName: "goforward.60")
             }
+            .accessibilityLabel("Forward 1 minute")
+            .disabled(isLoading || bleManager.playbackState.status == .stopped)
 
             Button {
                 bleManager.skipToNext()
