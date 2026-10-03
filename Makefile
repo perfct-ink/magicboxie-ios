@@ -1,5 +1,5 @@
-SCHEME := MagicBox
-PROJECT := MagicBox.xcodeproj
+SCHEME := MagicBoxie
+PROJECT := MagicBoxie.xcodeproj
 BUNDLE_ID := com.alexv.magicboxie.app
 DERIVED_DATA := build
 SIMULATOR_NAME ?= iPhone 17 Pro
@@ -30,12 +30,16 @@ dev: setup
 		-derivedDataPath $(DERIVED_DATA) \
 		build
 	$(MAKE) _resign
-	open -a Simulator
+	@if [ -d "$$(xcode-select -p)/Applications/Simulator.app" ]; then \
+		open -a "$$(xcode-select -p)/Applications/Simulator.app"; \
+	else \
+		open -a Simulator || echo "Simulator UI unavailable; continuing with simctl."; \
+	fi
 	xcrun simctl bootstatus '$(SIMULATOR_NAME)' -b
 	xcrun simctl install '$(SIMULATOR_NAME)' \
 		"$(DERIVED_DATA)/Build/Products/Debug-iphonesimulator/$(SCHEME).app"
-	SIMCTL_CHILD_MAGICBOX_DIRECT_API=1 \
-	SIMCTL_CHILD_MAGICBOX_DEVICE_URL=http://localhost:8000 \
+	SIMCTL_CHILD_MAGICBOXIE_DIRECT_API=1 \
+	SIMCTL_CHILD_MAGICBOXIE_DEVICE_URL=http://localhost:8000 \
 		xcrun simctl launch --terminate-running-process '$(SIMULATOR_NAME)' $(BUNDLE_ID)
 
 # xcodebuild's Simulator code-signing pass silently drops entitlements that
@@ -46,10 +50,10 @@ dev: setup
 # our own build+simctl-install path.
 _resign:
 	codesign --force --sign - \
-		--entitlements Sources/MagicBoxShareExtension/ShareExtension.entitlements \
-		"$(DERIVED_DATA)/Build/Products/Debug-iphonesimulator/$(SCHEME).app/PlugIns/MagicBoxShareExtension.appex"
+		--entitlements Sources/MagicBoxieShareExtension/ShareExtension.entitlements \
+		"$(DERIVED_DATA)/Build/Products/Debug-iphonesimulator/$(SCHEME).app/PlugIns/MagicBoxieShareExtension.appex"
 	codesign --force --sign - \
-		--entitlements Sources/MagicBox/MagicBox.entitlements \
+		--entitlements Sources/MagicBoxie/MagicBoxie.entitlements \
 		"$(DERIVED_DATA)/Build/Products/Debug-iphonesimulator/$(SCHEME).app"
 
 # Release-configuration build for the Simulator. Archiving for a physical
