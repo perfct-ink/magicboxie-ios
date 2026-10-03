@@ -9,47 +9,53 @@ struct ConnectionStatusView: View {
     @EnvironmentObject private var bleManager: BLEManager
 
     var body: some View {
-        switch bleManager.connectionState {
-        case .disconnected:
-            VStack(spacing: 12) {
-                Image(systemName: "antenna.radiowaves.left.and.right.slash")
-                    .font(.largeTitle)
-                    .foregroundStyle(.secondary)
-                Text("Not connected to MagicBoxie")
-                    .foregroundStyle(.secondary)
-                Button(AppConfig.mode == .directAPI ? "Connect to Server" : "Scan for MagicBoxie") {
-                    bleManager.retry()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.appAccent)
-            }
-        case .scanning:
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Scanning for MagicBoxie…")
-                    .foregroundStyle(.secondary)
-            }
-        case .connecting:
-            VStack(spacing: 12) {
-                ProgressView()
-                Text(AppConfig.mode == .bluetooth ? "Scanning for MagicBoxie…" : "Connecting…")
-                    .foregroundStyle(.secondary)
-            }
-        case .failed(let message):
-            VStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.largeTitle)
-                    .foregroundStyle(.red)
-                Text(message)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-                Button("Retry") { bleManager.retry() }
+        Group {
+            switch bleManager.connectionState {
+            case .disconnected:
+                VStack(spacing: 12) {
+                    Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                    Text("Not connected to MagicBoxie")
+                        .foregroundStyle(.secondary)
+                    Button(AppConfig.mode == .directAPI ? "Connect to Server" : "Scan for MagicBoxie") {
+                        bleManager.retry()
+                    }
                     .buttonStyle(.borderedProminent)
                     .tint(.appAccent)
+                }
+            case .scanning:
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Scanning for MagicBoxie…")
+                        .foregroundStyle(.secondary)
+                }
+            case .connecting:
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text(AppConfig.mode == .bluetooth ? "Scanning for MagicBoxie…" : "Connecting…")
+                        .foregroundStyle(.secondary)
+                }
+            case .failed(let message):
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                        .foregroundStyle(.red)
+                    Text(message)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                    Button("Retry") { bleManager.retry() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.appAccent)
+                }
+            case .connected:
+                EmptyView()
             }
-        case .connected:
-            EmptyView()
         }
+        // Take the full space offered and center within it, so the label
+        // can't be proposed a narrow width and wrap into a squished column.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 16)
     }
 }
 
