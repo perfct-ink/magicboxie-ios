@@ -64,6 +64,7 @@ struct MovieLibraryView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .refreshable {
                 await refresh()
             }
