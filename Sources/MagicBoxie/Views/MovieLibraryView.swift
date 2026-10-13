@@ -16,12 +16,9 @@ struct MovieLibraryView: View {
                     .padding()
             }
             if bleManager.connectionState == .connected || !bleManager.movies.isEmpty {
-                HStack {
-                    Picker("Movie view", selection: $showsList) {
-                        Text("Netflix").tag(false)
-                        Text("List").tag(true)
-                    }
-                    .pickerStyle(.segmented)
+                HStack(spacing: 10) {
+                    Spacer()
+                    viewToggleButton
                     refreshButton
                         .disabled(bleManager.connectionState != .connected)
                 }
@@ -148,13 +145,31 @@ struct MovieLibraryView: View {
             bleManager.refreshLibrary()
             withAnimation(.easeInOut(duration: 0.5)) { refreshSpin += 360 }
         } label: {
-            Image(systemName: "arrow.clockwise")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.white)
-                .padding(10)
-                .background(.ultraThinMaterial, in: Circle())
+            circleIcon("arrow.clockwise")
                 .rotationEffect(.degrees(refreshSpin))
         }
+    }
+
+    /// One button flipping between the Netflix-style shelves and a flat
+    /// list. The icon shows the view you'd switch to, so tapping it reads
+    /// as "show me that instead".
+    private var viewToggleButton: some View {
+        Button {
+            showsList.toggle()
+        } label: {
+            circleIcon(showsList ? "rectangle.stack" : "list.bullet")
+        }
+        .accessibilityLabel(showsList ? "Show Netflix view" : "Show list view")
+    }
+
+    /// Shared look for the round icon buttons in the top bar, so the view
+    /// toggle and refresh always match in size and style.
+    private func circleIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(10)
+            .background(.ultraThinMaterial, in: Circle())
     }
 
 }

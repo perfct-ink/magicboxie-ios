@@ -213,6 +213,7 @@ struct DeviceStatusView: View {
             if let ip = bleManager.deviceIPAddress {
                 LabeledContent("IP Address", value: ip)
             }
+            internetRow
             temperatureRow
             throttleWarnings
             if let title = bleManager.syncingMovieTitle {
@@ -234,6 +235,29 @@ struct DeviceStatusView: View {
             Text("Device")
         }
         .listRowBackground(Color.appElevatedSurface)
+    }
+
+    /// Whether the device itself can reach the internet - distinct from the
+    /// phone's own connection, since the device is what downloads movies
+    /// and reports to MagicBoxie-web.
+    private var internetRow: some View {
+        HStack {
+            Text("Internet")
+            Spacer()
+            switch bleManager.internetReachable {
+            case true?:
+                Text("Connected")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.green)
+            case false?:
+                Text("Offline")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.red)
+            case nil:
+                Text("Unknown")
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     /// Color-coded by rough Pi Zero W heat stage - real hardware

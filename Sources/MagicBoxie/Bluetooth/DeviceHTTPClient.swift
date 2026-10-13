@@ -33,6 +33,10 @@ struct DeviceStatus: Decodable {
     /// available (see util.get_throttle_status), not "false."
     let underVoltage: Bool?
     let throttled: Bool?
+    /// Whether the device can reach the internet right now (see
+    /// util.internet_reachable on the device side). nil from a device
+    /// that predates this field, which shouldn't read as "offline."
+    let internetReachable: Bool?
 
     enum CodingKeys: String, CodingKey {
         case status
@@ -43,6 +47,7 @@ struct DeviceStatus: Decodable {
         case cpuTemperatureCelsius = "cpu_temperature_celsius"
         case underVoltage = "under_voltage"
         case throttled
+        case internetReachable = "internet_reachable"
     }
 }
 

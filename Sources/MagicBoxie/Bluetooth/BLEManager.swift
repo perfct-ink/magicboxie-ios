@@ -97,6 +97,9 @@ final class BLEManager: NSObject, ObservableObject {
     @Published private(set) var cpuTemperatureCelsius: Double?
     @Published private(set) var underVoltage: Bool?
     @Published private(set) var throttled: Bool?
+    /// nil until the device has reported it (or from an older device build
+    /// that doesn't send it) - the UI shows that as "Unknown", not offline.
+    @Published private(set) var internetReachable: Bool?
     /// Set once an automatic recovery attempt (see handleReadFailure)
     /// hasn't resolved repeated BLE characteristic-read failures - the one
     /// thing this app genuinely can't fix itself, since the cause is
@@ -470,6 +473,7 @@ final class BLEManager: NSObject, ObservableObject {
         cpuTemperatureCelsius = await status?.cpuTemperatureCelsius
         underVoltage = await status?.underVoltage
         throttled = await status?.throttled
+        internetReachable = await status?.internetReachable
         deviceIPAddress = await version?.ipAddress
     }
 

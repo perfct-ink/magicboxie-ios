@@ -18,6 +18,7 @@ struct ConnectionStatusView: View {
                         .foregroundStyle(.secondary)
                     Text("Not connected to MagicBoxie")
                         .foregroundStyle(.secondary)
+                        .fixedSize()
                     Button(AppConfig.mode == .directAPI ? "Connect to Server" : "Scan for MagicBoxie") {
                         bleManager.retry()
                     }
@@ -29,12 +30,14 @@ struct ConnectionStatusView: View {
                     ProgressView()
                     Text("Scanning for MagicBoxie…")
                         .foregroundStyle(.secondary)
+                        .fixedSize()
                 }
             case .connecting:
                 VStack(spacing: 12) {
                     ProgressView()
-                    Text(AppConfig.mode == .bluetooth ? "Scanning for MagicBoxie…" : "Connecting…")
+                    Text(AppConfig.mode == .bluetooth ? "Connecting to MagicBoxie…" : "Connecting…")
                         .foregroundStyle(.secondary)
+                        .fixedSize()
                 }
             case .failed(let message):
                 VStack(spacing: 12) {
